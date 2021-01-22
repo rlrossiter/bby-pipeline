@@ -1,0 +1,245 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "appName": {
+            "type": "string",
+            "metadata": {
+                "description": "The name of the function app that you wish to create."
+            }
+        },
+        "serviceBusNamespaceName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the Service Bus namespace"
+            }
+        },
+        "storageAccountName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the storage account to store page statuses and notifications"
+            }
+        },
+        "webjobStorageAccountName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the storage account for functions web job storage"
+            }
+        },
+        "notifierEmail": {
+            "type": "string",
+            "metadata": {
+                "description": "The email address used to send notifications"
+            }
+        },
+        "notifierPassword": {
+            "type": "securestring",
+            "metadata": {
+                "description": "The password to the notifier email address"
+            }
+        },
+        "location": {
+            "type": "string",
+            "defaultValue": "[resourceGroup().location]",
+            "metadata": {
+                "description": "Location for all resources."
+            }
+        }
+    },
+    "variables": {
+        "queues": [
+            "notification",
+            "status",
+            "trigger"
+        ],
+        "containers": [
+            "sku",
+            "subscriber"
+        ],
+        "tables": [
+            "notification",
+            "status"
+        ],
+        "functionAppName": "[parameters('appName')]",
+        "hostingPlanName": "[parameters('appName')]",
+        "functionWorkerRuntime": "python"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2019-06-01",
+            "name": "[parameters('webjobStorageAccountName')]",
+            "location": "[parameters('location')]",
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "kind": "StorageV2",
+            "properties": {
+                "allowBlobPublicAccess": false
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2019-06-01",
+            "name": "[parameters('storageAccountName')]",
+            "location": "[parameters('location')]",
+            "sku": {
+                "name": "Standard_GRS"
+            },
+            "kind": "StorageV2",
+            "properties": {
+                "allowBlobPublicAccess": false
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+            "apiVersion": "2019-06-01",
+            "name": "[concat(parameters('storageAccountName'), '/default/', variables('containers')[copyIndex()])]",
+            "dependsOn": [
+                "[parameters('storageAccountName')]"
+            ],
+            "copy": {
+                "name": "containercopy",
+                "count": "[length(variables('containers'))]"
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/tableServices/tables",
+            "apiVersion": "2019-06-01",
+            "name": "[concat(parameters('storageAccountName'), '/default/', variables('tables')[copyIndex()])]",
+            "dependsOn": [
+                "[parameters('storageAccountName')]"
+            ],
+            "copy": {
+                "name": "tablecopy",
+                "count": "[length(variables('tables'))]"
+            }
+        },
+        {
+            "type": "Microsoft.ServiceBus/namespaces",
+            "apiVersion": "2018-01-01-preview",
+            "name": "[parameters('serviceBusNamespaceName')]",
+            "location": "[parameters('location')]",
+            "sku": {
+                "name": "Basic"
+            },
+            "properties": {}
+        },
+        {
+            "type": "Microsoft.ServiceBus/namespaces/authorizationRules",
+            "apiVersion": "2017-04-01",
+            "name": "[concat(parameters('serviceBusNamespaceName'), '/SendListenKey')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.ServiceBus/namespaces', parameters('serviceBusNamespaceName'))]"
+            ],
+            "properties": {
+                "rights": [
+                    "Send",
+                    "Listen"
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.ServiceBus/namespaces/queues",
+            "apiVersion": "2017-04-01",
+            "name": "[concat(parameters('serviceBusNamespaceName'), '/', variables('queues')[copyIndex()])]",
+            "dependsOn": [
+                "[resourceId('Microsoft.ServiceBus/namespaces', parameters('serviceBusNamespaceName'))]"
+            ],
+            "properties": {
+                "lockDuration": "PT30S",
+                "maxSizeInMegabytes": 1024,
+                "requiresDuplicateDetection": false,
+                "requiresSession": false,
+                "defaultMessageTimeToLive": "PT24H",
+                "deadLetteringOnMessageExpiration": false,
+                "duplicateDetectionHistoryTimeWindow": "PT10M",
+                "maxDeliveryCount": 10,
+                "enablePartitioning": false,
+                "enableExpress": false
+            },
+            "copy": {
+                "name": "queuecopy",
+                "count": "[length(variables('queues'))]"
+            }
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2020-06-01",
+            "name": "[variables('hostingPlanName')]",
+            "location": "[parameters('location')]",
+            "sku": {
+                "name": "Y1",
+                "tier": "Dynamic"
+            },
+            "kind": "linux",
+            "properties": {
+                "name": "[variables('hostingPlanName')]",
+                "computeMode": "Dynamic",
+                "reserved": true
+            }
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2020-06-01",
+            "name": "[variables('functionAppName')]",
+            "location": "[parameters('location')]",
+            "kind": "functionapp,linux",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('webjobStorageAccountName'))]",
+                "[resourceId('Microsoft.ServiceBus/namespaces/authorizationRules', parameters('serviceBusNamespaceName'), 'SendListenKey')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+            ],
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('hostingPlanName'))]",
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('webjobStorageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('webjobStorageAccountName')), '2019-04-01').keys[0].value, ';EndpointSuffix=core.windows.net')]"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~3"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "[variables('functionWorkerRuntime')]"
+                        },
+                        {
+                            "name": "ScannerServiceBusConnection",
+                            "value": "[listKeys(resourceId('Microsoft.ServiceBus/namespaces/authorizationRules', parameters('serviceBusNamespaceName'), 'SendListenKey'), '2017-04-01').primaryConnectionString]"
+                        },
+                        {
+                            "name": "ScannerStorageAccountConnection",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2019-04-01').keys[0].value, ';EndpointSuffix=core.windows.net')]"
+                        },
+                        {
+                            "name": "NotifierEmail",
+                            "value": "[parameters('notifierEmail')]"
+                        },
+                        {
+                            "name": "NotifierPw",
+                            "value": "[parameters('notifierPassword')]"
+                        }
+                    ]
+                }
+            }
+        }
+    ],
+    "outputs": {
+        "ScannerServiceBusConnection": {
+            "type": "string",
+            "value": "[listKeys(resourceId('Microsoft.ServiceBus/namespaces/authorizationRules', parameters('serviceBusNamespaceName'), 'SendListenKey'), '2017-04-01').primaryConnectionString]"
+        },
+        "ScannerStorageAccountConnection": {
+            "type": "string",
+            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2019-04-01').keys[0].value, ';EndpointSuffix=core.windows.net')]"
+        },
+        "AzureWebJobsStorage": {
+            "type": "string",
+            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('webjobStorageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('webjobStorageAccountName')), '2019-04-01').keys[0].value, ';EndpointSuffix=core.windows.net')]"
+        }
+    }
+}

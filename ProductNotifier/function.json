@@ -1,0 +1,35 @@
+{
+  "scriptFile": "notify.py",
+  "bindings": [
+    {
+      "name": "msg",
+      "type": "serviceBusTrigger",
+      "direction": "in",
+      "queueName": "notification",
+      "connection": "ScannerServiceBusConnection"
+    },
+    {
+      "name": "notifications",
+      "type": "table",
+      "tableName": "notification",
+      "take": "1000",
+      "connection": "ScannerStorageAccountConnection",
+      "direction": "in"
+    },
+    {
+      "name": "subscriptionsblob",
+      "type": "blob",
+      "dataType": "string",
+      "path": "subscriber/subscriptions.json",
+      "connection": "ScannerStorageAccountConnection",
+      "direction": "in"
+    },
+    {
+      "name": "$return",
+      "type": "table",
+      "tableName": "notification",
+      "connection": "ScannerStorageAccountConnection",
+      "direction": "out"
+    }
+  ]
+}

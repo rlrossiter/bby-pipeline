@@ -1,0 +1,19 @@
+{
+  "scriptFile": "scrape.py",
+  "bindings": [
+    {
+      "name": "msg",
+      "type": "serviceBusTrigger",
+      "direction": "in",
+      "queueName": "trigger",
+      "connection": "ScannerServiceBusConnection"
+    },
+    {
+      "name": "$return",
+      "type": "serviceBus",
+      "direction": "out",
+      "queueName": "status",
+      "connection": "ScannerServiceBusConnection"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "scriptFile": "process.py",
+  "bindings": [
+    {
+      "name": "msg",
+      "type": "serviceBusTrigger",
+      "direction": "in",
+      "queueName": "status",
+      "connection": "ScannerServiceBusConnection"
+    },
+    {
+      "name": "$return",
+      "type": "table",
+      "tableName": "status",
+      "connection": "ScannerStorageAccountConnection",
+      "direction": "out"
+    },
+    {
+      "type": "serviceBus",
+      "direction": "out",
+      "connection": "ScannerServiceBusConnection",
+      "name": "notification",
+      "queueName": "notification"
+    }
+  ]
+}
